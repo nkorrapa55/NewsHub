@@ -1,0 +1,7 @@
+{
+    "scripts": [
+        "create path (sling:OrderedFolder) /content/dam/newshub",
+        "create path (nt:unstructured) /content/dam/newshub/jcr:content",
+        "set properties on /content/dam/newshub/jcr:content\n  set cq:conf{String} to /conf/newshub\n  set jcr:title{String} to \"NewsHub AEM\"\nend"
+    ]
+}
