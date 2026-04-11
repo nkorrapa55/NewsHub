@@ -29,6 +29,7 @@ import java.util.Map;
 public class ApiClientServiceImpl implements ApiClientService {
 
     private static final Logger log = LoggerFactory.getLogger(ApiClientServiceImpl.class);
+
     private CloseableHttpClient httpClient;
     private PoolingHttpClientConnectionManager connectionManager;
 
@@ -50,99 +51,112 @@ public class ApiClientServiceImpl implements ApiClientService {
                 .setConnectionManager(connectionManager)
                 .setDefaultRequestConfig(requestConfig)
                 .build();
+
+        log.info("HTTP Client initialized with pooling");
     }
+
     @Deactivate
-    protected  void deactivate(){
-        // Clean up resources
-        if(httpClient !=null){
-            try {
-                httpClient.close();
-                log.info("HTTP client closed");
-            } catch (IOException e) {
-                log.error("Error Closing HTTP client",e);
-            }
-        }
-        if(connectionManager != null){
+    protected void deactivate() {
+        closeQuietly(httpClient);
+        if (connectionManager != null) {
             connectionManager.close();
-            log.info("Connection manager closed");
         }
     }
 
     @Override
     public String get(String url, Map<String, String> headers) {
-        HttpGet request = new HttpGet(url);
-        applyHeaders(request,headers);
-        return executeRequest(request);
+        return execute(new HttpGet(url), headers, null);
     }
 
     @Override
     public String post(String url, Map<String, String> headers, String jsonBody) {
         HttpPost request = new HttpPost(url);
-        applyHeaders(request,headers);
-        if(jsonBody != null){
-            request.setEntity(new StringEntity(jsonBody, StandardCharsets.UTF_8));
-            request.setHeader("Content-Type","application/json");
-        }
-        return executeRequest(request);
+        return execute(request, headers, jsonBody);
     }
 
     @Override
     public String put(String url, Map<String, String> headers, String jsonBody) {
         HttpPut request = new HttpPut(url);
-        applyHeaders(request, headers);
-
-        if (jsonBody != null) {
-            request.setEntity(new StringEntity(jsonBody, StandardCharsets.UTF_8));
-            request.setHeader("Content-Type", "application/json");
-        }
-        return executeRequest(request);
+        return execute(request, headers, jsonBody);
     }
 
     @Override
     public String delete(String url, Map<String, String> headers) {
-        HttpDelete request = new HttpDelete(url);
-        applyHeaders(request,headers);
-        return executeRequest(request);
+        return execute(new HttpDelete(url), headers, null);
     }
 
-    /**
-     * Execute request and handle response
-     */
-    private String executeRequest(HttpRequestBase request) {
-        log.debug("Executing {} request to: {}", request.getMethod(), request.getURI());
+    // ==========================
+    // CORE EXECUTION METHOD
+    // ==========================
+    private String execute(HttpRequestBase request, Map<String, String> headers, String body) {
+
+        applyHeaders(request, headers);
+
+        if (request instanceof HttpEntityEnclosingRequestBase && body != null) {
+            ((HttpEntityEnclosingRequestBase) request)
+                    .setEntity(new StringEntity(body, StandardCharsets.UTF_8));
+            request.setHeader("Content-Type", "application/json");
+        }
+
+        log.debug("Executing {} -> {}", request.getMethod(), request.getURI());
+
         try (CloseableHttpResponse response = httpClient.execute(request)) {
-            int statusCode = response.getStatusLine().getStatusCode();
-            HttpEntity entity = response.getEntity();
-            String responseBody = entity != null ? EntityUtils.toString(entity, StandardCharsets.UTF_8):"";
-            if (statusCode >= 200 && statusCode < 300) {
-                log.debug("Request successful - Status: {}", statusCode);
+
+            int status = response.getStatusLine().getStatusCode();
+            String responseBody = getResponseBody(response.getEntity());
+
+            if (isSuccess(status)) {
                 return responseBody;
-            } else {
-                log.warn("Request failed - Status: {}, URL: {}", statusCode, request.getURI());
-                return buildErrorResponse(statusCode, responseBody);
             }
 
+            log.warn("HTTP {} failed for {} | Status: {}", request.getMethod(), request.getURI(), status);
+            return buildErrorResponse(status, responseBody);
+
         } catch (Exception e) {
-            log.error("Request failed - URL: {}, Error: {}", request.getURI(), e.getMessage());
-            return buildErrorResponse(-1, e.getMessage());
+            log.error("HTTP call failed: {}", request.getURI(), e);
+            return buildErrorResponse(500, e.getMessage());
+        }
+    }
+
+    // ==========================
+    // HELPERS
+    // ==========================
+
+    private boolean isSuccess(int status) {
+        return status >= 200 && status < 300;
+    }
+
+    private String getResponseBody(HttpEntity entity) throws IOException {
+        return entity != null ? EntityUtils.toString(entity, StandardCharsets.UTF_8) : "";
+    }
+
+    private void applyHeaders(HttpRequestBase request, Map<String, String> headers) {
+        request.setHeader("Accept", "application/json");
+
+        if (headers != null) {
+            headers.forEach(request::setHeader);
+        }
+    }
+
+    private void closeQuietly(CloseableHttpClient client) {
+        if (client != null) {
+            try {
+                client.close();
+            } catch (IOException e) {
+                log.error("Error closing HTTP client", e);
+            }
         }
     }
 
     private String buildErrorResponse(int statusCode, String message) {
-        return String.format("{\"error\":true,\"statusCode\":%d,\"message\":\"%s\"}",
+        return String.format(
+                "{\"status\":\"error\",\"statusCode\":%d,\"message\":\"%s\"}",
                 statusCode,
-                message.replace("\"", "\\\""));
+                sanitize(message)
+        );
     }
 
-    /**
-     * Apply custom headers to request
-     */
-    private void applyHeaders(HttpRequestBase request, Map<String, String> headers) {
-        // Default headers
-        request.setHeader("Accept", "application/json");
-        // Apply custom headers
-        if (headers != null && !headers.isEmpty()) {
-            headers.forEach(request::setHeader);
-        }
+    private String sanitize(String msg) {
+        return msg != null ? msg.replace("\"", "\\\"") : "Unknown error";
     }
 }

@@ -1,64 +1,81 @@
 package com.newshub.aem.core.services.impl;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
 import com.newshub.aem.core.constants.NewConstants;
 import org.apache.commons.lang3.StringUtils;
 
-public class NewsServiceHelper {
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.regex.Pattern;
 
+public final class NewsServiceHelper {
+
+    // Precompiled regex (better performance)
+    private static final Pattern DATE_PATTERN = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
+
+    // Prevent instantiation
+    private NewsServiceHelper() {}
+
+
+    // VALIDATIONS
     public static boolean isValidCategory(String category) {
-        return StringUtils.isNotBlank(category)
-                && NewConstants.VALID_CATEGORIES.contains(category.toLowerCase());
+        String normalized = normalize(category);
+        return normalized != null && NewConstants.VALID_CATEGORIES.contains(normalized);
     }
 
     public static boolean isValidCountry(String country) {
-        return StringUtils.isNotBlank(country)
-                && NewConstants.VALID_COUNTRIES.contains(country.toLowerCase());
+        String normalized = normalize(country);
+        return normalized != null && NewConstants.VALID_COUNTRIES.contains(normalized);
     }
 
     public static boolean isValidLanguage(String language) {
-        return StringUtils.isNotBlank(language)
-                && NewConstants.VALID_LANGUAGES.contains(language.toLowerCase());
+        String normalized = normalize(language);
+        return normalized != null && NewConstants.VALID_LANGUAGES.contains(normalized);
     }
 
     public static boolean isValidSortBy(String sortBy) {
-        return StringUtils.isNotBlank(sortBy)
-                && NewConstants.VALID_SORT_OPTIONS.contains(sortBy.toLowerCase());
+        String normalized = normalize(sortBy);
+        return normalized != null && NewConstants.VALID_SORT_OPTIONS.contains(normalized);
     }
 
     public static boolean isValidDate(String date) {
-        return StringUtils.isNotBlank(date) && date.matches("\\d{4}-\\d{2}-\\d{2}");
+        return StringUtils.isNotBlank(date) && DATE_PATTERN.matcher(date).matches();
     }
 
-    public static int validatePageSize(int pageSize, int defaultPageSize ){
+    // PAGINATION
+    public static int validatePageSize(int pageSize, int defaultPageSize) {
         if (pageSize < 1) return defaultPageSize;
-        if (pageSize > 100) return 100;
-        return pageSize;
+        return Math.min(pageSize, 100);
     }
 
     public static int validatePage(int page) {
         return Math.max(1, page);
     }
 
+    // ENCODING
     public static String encode(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+        return StringUtils.isBlank(value) ? "" : URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
-    public List<String> getValidCategories() {
+
+    // NORMALIZATION
+    private static String normalize(String value) {
+        return StringUtils.isBlank(value) ? null : value.toLowerCase();
+    }
+
+    // CONSTANT ACCESS
+    public static List<String> getValidCategories() {
         return NewConstants.VALID_CATEGORIES;
     }
 
-    public List<String> getValidCountries() {
+    public static List<String> getValidCountries() {
         return NewConstants.VALID_COUNTRIES;
     }
 
-    public List<String> getValidLanguages() {
+    public static List<String> getValidLanguages() {
         return NewConstants.VALID_LANGUAGES;
     }
 
-    public List<String> getValidSortOptions() {
+    public static List<String> getValidSortOptions() {
         return NewConstants.VALID_SORT_OPTIONS;
     }
 }
